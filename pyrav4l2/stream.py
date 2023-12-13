@@ -6,6 +6,13 @@ from select import select
 from .device import Device
 from .v4l2 import *
 
+from dataclasses import dataclass
+
+@dataclass
+class Frame:
+    data: bytes
+    timestamp: float
+
 
 class Stream:
     """
@@ -31,7 +38,7 @@ class Stream:
 
         self._open()
 
-    def __iter__(self) -> bytes:
+    def __iter__(self) -> Frame:
         """
         Yields the captured frame every iteration
         """
@@ -49,9 +56,10 @@ class Stream:
                 ioctl(self.f_cam, VIDIOC_DQBUF, buf)
 
                 frames = self.buffers[buf.index][1][:buf.bytesused]
+                timestamp = self.buffers[buf.index][0].timestamp.tv_usec * 1e-6 + self.buffers[buf.index][0].timestamp.tv_sec
                 ioctl(self.f_cam, VIDIOC_QBUF, buf)
 
-                yield frames
+                yield Frame(frames, timestamp)
         finally:
             self._stop()
 
@@ -59,7 +67,7 @@ class Stream:
         self.f_cam = open(self.device.path, "rb+", buffering=0)
 
         req = v4l2_requestbuffers()
-        req.count = 4
+        req.count = 1
         req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
         req.memory = V4L2_MEMORY_MMAP
         ioctl(self.f_cam, VIDIOC_REQBUFS, req)
