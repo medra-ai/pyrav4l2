@@ -14,6 +14,7 @@ class Frame:
     timestamp: float
 
 
+
 class Stream:
     """
     Class that uses Device for capturing frames.
@@ -36,38 +37,31 @@ class Stream:
         self._context_level = 0
         self.device = device
 
+    def start(self):
         self._open()
-
-    def __iter__(self) -> Frame:
-        """
-        Yields the captured frame every iteration
-        """
-
-        if self.f_cam.closed:
-            self._open()
 
         ioctl(self.f_cam, VIDIOC_STREAMON,
               ctypes.c_int(V4L2_BUF_TYPE_VIDEO_CAPTURE))
         select((self.f_cam, ), (), ())
 
-        try:
-            while True:
-                buf = self.buffers[0][0]
-                ioctl(self.f_cam, VIDIOC_DQBUF, buf)
+    def get_frame(self) -> Frame:
+        buf = self.buffers[0][0]
+        ioctl(self.f_cam, VIDIOC_DQBUF, buf)
 
-                frames = self.buffers[buf.index][1][:buf.bytesused]
-                timestamp = self.buffers[buf.index][0].timestamp.tv_usec * 1e-6 + self.buffers[buf.index][0].timestamp.tv_sec
-                ioctl(self.f_cam, VIDIOC_QBUF, buf)
-
-                yield Frame(frames, timestamp)
-        finally:
-            self._stop()
+        frame = self.buffers[buf.index][1][:buf.bytesused]
+        timestamp = self.buffers[buf.index][0].timestamp.tv_usec * 1e-6 + self.buffers[buf.index][0].timestamp.tv_sec
+        
+        ioctl(self.f_cam, VIDIOC_QBUF, buf)
+        return Frame(frame, timestamp)
+    
+    def close(self):
+        self._stop()
 
     def _open(self):
         self.f_cam = open(self.device.path, "rb+", buffering=0)
 
         req = v4l2_requestbuffers()
-        req.count = 1
+        req.count = 4
         req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
         req.memory = V4L2_MEMORY_MMAP
         ioctl(self.f_cam, VIDIOC_REQBUFS, req)
