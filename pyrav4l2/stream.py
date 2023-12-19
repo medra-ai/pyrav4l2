@@ -6,54 +6,53 @@ from select import select
 from .device import Device
 from .v4l2 import *
 
+from dataclasses import dataclass
+
+@dataclass
+class Frame:
+    """Class to store the information of a frame"""
+    data: bytes
+    timestamp: float
+
 
 class Stream:
-    """
-    Class that uses Device for capturing frames.
-    When iterating over Stream object, it returns newly captured frame every iteration
+    """Class that uses Device for capturing frames.
+
+    Args:
+        device (Device): Device to grab frames from
     """
 
     def __init__(self, device: Device) -> None:
-        """
-        Parameters
-        ----------
-        device : Device
-            Device that should be used for streaming
-
-        Raises
-        ------
-        IOError
-            If there is not enough memory for a buffer
-        """
-
         self._context_level = 0
         self.device = device
 
+    def start(self):
+        """Start the stream"""
+
         self._open()
 
-    def __iter__(self) -> bytes:
-        """
-        Yields the captured frame every iteration
-        """
-
-        if self.f_cam.closed:
-            self._open()
-
-        ioctl(self.f_cam, VIDIOC_STREAMON,
-              ctypes.c_int(V4L2_BUF_TYPE_VIDEO_CAPTURE))
+        ioctl(self.f_cam, VIDIOC_STREAMON, ctypes.c_int(V4L2_BUF_TYPE_VIDEO_CAPTURE))
         select((self.f_cam, ), (), ())
 
-        try:
-            while True:
-                buf = self.buffers[0][0]
-                ioctl(self.f_cam, VIDIOC_DQBUF, buf)
+    def get_frame(self) -> Frame:
+        """Get a frame from the buffer
+        
+        Returns:
+            Frame: Dataclass containing the bytes information of a frame, as well as its timestamp
+        """
 
-                frames = self.buffers[buf.index][1][:buf.bytesused]
-                ioctl(self.f_cam, VIDIOC_QBUF, buf)
+        buf = self.buffers[0][0]
+        ioctl(self.f_cam, VIDIOC_DQBUF, buf)
 
-                yield frames
-        finally:
-            self._stop()
+        frame = self.buffers[buf.index][1][:buf.bytesused]
+        timestamp = self.buffers[buf.index][0].timestamp.tv_usec * 1e-6 + self.buffers[buf.index][0].timestamp.tv_sec
+        
+        ioctl(self.f_cam, VIDIOC_QBUF, buf)
+        return Frame(frame, timestamp)
+    
+    def close(self):
+        """Close the stream"""
+        self._stop()
 
     def _open(self):
         self.f_cam = open(self.device.path, "rb+", buffering=0)
